@@ -7,13 +7,13 @@ package edu.buffalo.cse.cse486586.groupmessenger2;
 public class Message {
     private String message;
     private long senderID;
-    private long messageID;
+    private String messageID;
     private float priority;
     private long proposerId;
     private boolean proposed;
     private boolean accepted;
 
-    public Message(String message, long senderID, long messageID, float priority, boolean proposed, boolean accepted) {
+    public Message(String message, long senderID, String messageID, float priority, boolean proposed, boolean accepted) {
         this.message = message;
         this.senderID = senderID;
         this.messageID = messageID;
@@ -23,7 +23,7 @@ public class Message {
         this.proposerId = -1;
     }
 
-    public Message(String message, long senderID, long messageID) {
+    public Message(String message, long senderID, String messageID) {
         this.message = message;
         this.senderID = senderID;
         this.messageID = messageID;
@@ -66,7 +66,7 @@ public class Message {
         return senderID;
     }
 
-    public long getMessageID() {
+    public String getMessageID() {
         return messageID;
     }
 
