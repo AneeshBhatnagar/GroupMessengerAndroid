@@ -1,5 +1,8 @@
 package edu.buffalo.cse.cse486586.groupmessenger2;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 /**
  * Created by aneesh on 3/10/17.
  */
@@ -9,9 +12,10 @@ public class Message {
     private long senderID;
     private String messageID;
     private float priority;
-    private long proposerId;
+    private long proposerID;
     private boolean proposed;
     private boolean accepted;
+    private static String[] jsonFields = {"message","senderID","messageID","priority","proposerID","proposed","accepted"};
 
     public Message(String message, long senderID, String messageID, float priority, boolean proposed, boolean accepted) {
         this.message = message;
@@ -20,7 +24,7 @@ public class Message {
         this.priority = priority;
         this.proposed = proposed;
         this.accepted = accepted;
-        this.proposerId = -1;
+        this.proposerID = -1;
     }
 
     public Message(String message, long senderID, String messageID) {
@@ -30,19 +34,35 @@ public class Message {
         this.priority = -1;
         this.proposed = false;
         this.accepted = false;
-        this.proposerId = -1;
+        this.proposerID = -1;
     }
 
-    public void setProposed(float priority, long proposerId) {
+    public Message(String jsonString){
+        //Used to convert JSON to class object
+        try{
+            JSONObject jsonObject = new JSONObject(jsonString);
+            this.message = jsonObject.getString(jsonFields[0]);
+            this.senderID = jsonObject.getLong(jsonFields[1]);
+            this.messageID = jsonObject.getString(jsonFields[2]);
+            this.priority = (float)jsonObject.getDouble(jsonFields[3]);
+            this.proposerID = jsonObject.getLong(jsonFields[4]);
+            this.proposed = jsonObject.getBoolean(jsonFields[5]);
+            this.accepted = jsonObject.getBoolean(jsonFields[6]);
+        }catch (JSONException e){
+            e.printStackTrace();
+        }
+    }
+
+    public void setProposed(float priority, long proposerID) {
         this.priority = priority;
-        this.proposerId = proposerId;
+        this.proposerID = proposerID;
         this.proposed = true;
         this.accepted = false;
     }
 
     public void setAccepted(float priority) {
         this.priority = priority;
-        this.proposerId = -1;
+        this.proposerID = -1;
         this.accepted = true;
         this.proposed = false;
     }
@@ -74,5 +94,21 @@ public class Message {
         return priority;
     }
 
-
+    public String getJson(){
+        //Converting the class to a JSON format to send as a string across the network
+        JSONObject jsonObject = new JSONObject();
+        try{
+            jsonObject.put(jsonFields[0],this.message);
+            jsonObject.put(jsonFields[1],this.senderID);
+            jsonObject.put(jsonFields[2],this.messageID);
+            jsonObject.put(jsonFields[3],this.priority);
+            jsonObject.put(jsonFields[4],this.proposerID);
+            jsonObject.put(jsonFields[5],this.proposed);
+            jsonObject.put(jsonFields[6],this.accepted);
+        }catch (JSONException e){
+            e.printStackTrace();
+            return null;
+        }
+        return jsonObject.toString();
+    }
 }

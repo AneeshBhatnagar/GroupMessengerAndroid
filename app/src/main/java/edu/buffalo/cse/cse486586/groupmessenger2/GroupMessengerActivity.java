@@ -20,6 +20,8 @@ import android.widget.TextView;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -134,17 +136,23 @@ public class GroupMessengerActivity extends Activity {
             while (true) {
                 try {
                     Socket socket = serverSocket.accept();
+                    //ObjectInputStream objectInputStream = new ObjectInputStream(socket.getInputStream());
                     DataInputStream dataInputStream = new DataInputStream(socket.getInputStream());
                     DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
-                    String msg = dataInputStream.readUTF();
+                    String jsonString = dataInputStream.readUTF();
+                    //Message msg = (Message) objectInputStream.readObject();
+                    Message msg = new Message(jsonString);
                     dataOutputStream.writeUTF("OK");
-                    Log.d("MSG RECEIVED", msg);
-                    publishProgress(msg);
+                    Log.d("MSG RECEIVED", msg.getMessage());
+                    publishProgress(msg.getMessage());
                     socket.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                     break;
-                }
+                } /*catch (ClassNotFoundException e){
+                    e.printStackTrace();
+                    break;
+                }*/
             }
 
 
@@ -186,10 +194,13 @@ public class GroupMessengerActivity extends Activity {
                 for (int port : remotePorts) {
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             port);
+//                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
+//                    objectOutputStream.writeObject(msgToSend);
+//                    objectOutputStream.flush();
                     DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
-                    dataOutputStream.writeUTF(msgToSend.getMessage());
+                    dataOutputStream.writeUTF(msgToSend.getJson());
                     dataOutputStream.flush();
-                    Log.d("MSG SENT", msgToSend.getMessage());
+                    Log.d("MSG SENT", msgToSend.getJson());
                     Log.d("Message Type", Integer.toString(whoToSend));
                     DataInputStream dataInputStream = new DataInputStream((socket.getInputStream()));
                     String resp = dataInputStream.readUTF();
@@ -198,9 +209,9 @@ public class GroupMessengerActivity extends Activity {
 
                 }
             } catch (UnknownHostException e) {
-                Log.e(TAG, "ClientTask UnknownHostException");
+                e.printStackTrace();
             } catch (IOException e) {
-                Log.e(TAG, "ClientTask socket IOException");
+                e.printStackTrace();
             }
 
             return null;
