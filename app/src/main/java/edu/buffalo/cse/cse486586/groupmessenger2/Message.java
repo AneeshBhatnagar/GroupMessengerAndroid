@@ -9,6 +9,7 @@ public class Message {
     private long senderID;
     private long messageID;
     private float priority;
+    private long proposerId;
     private boolean proposed;
     private boolean accepted;
 
@@ -19,6 +20,7 @@ public class Message {
         this.priority = priority;
         this.proposed = proposed;
         this.accepted = accepted;
+        this.proposerId = -1;
     }
 
     public Message(String message, long senderID, long messageID) {
@@ -28,16 +30,19 @@ public class Message {
         this.priority = -1;
         this.proposed = false;
         this.accepted = false;
+        this.proposerId = -1;
     }
 
-    public void setProposed(float priority) {
+    public void setProposed(float priority, long proposerId) {
         this.priority = priority;
+        this.proposerId = proposerId;
         this.proposed = true;
         this.accepted = false;
     }
 
     public void setAccepted(float priority) {
         this.priority = priority;
+        this.proposerId = -1;
         this.accepted = true;
         this.proposed = false;
     }
