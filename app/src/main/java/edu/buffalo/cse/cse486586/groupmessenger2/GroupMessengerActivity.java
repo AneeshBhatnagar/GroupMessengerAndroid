@@ -20,8 +20,6 @@ import android.widget.TextView;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -55,11 +53,6 @@ public class GroupMessengerActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_group_messenger);
-
-        /*
-         * TODO: Use the TextView to display your messages. Though there is no grading component
-         * on how you display the messages, if you implement it, it'll make your debugging easier.
-         */
         tv = (TextView) findViewById(R.id.textView1);
         tv.setMovementMethod(new ScrollingMovementMethod());
         databaseHelper = new DatabaseHelper(getApplicationContext());
@@ -130,17 +123,14 @@ public class GroupMessengerActivity extends Activity {
 
         @Override
         protected Void doInBackground(ServerSocket... sockets) {
-            /*TODO: Implement Server Task to receive multiple messages together*/
             serverSocket = sockets[0];
             sqLiteDatabase = databaseHelper.getWritableDatabase();
             while (true) {
                 try {
                     Socket socket = serverSocket.accept();
-                    //ObjectInputStream objectInputStream = new ObjectInputStream(socket.getInputStream());
                     DataInputStream dataInputStream = new DataInputStream(socket.getInputStream());
                     DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
                     String jsonString = dataInputStream.readUTF();
-                    //Message msg = (Message) objectInputStream.readObject();
                     Message msg = new Message(jsonString);
                     dataOutputStream.writeUTF("OK");
                     Log.d("MSG RECEIVED", msg.getMessage());
@@ -149,10 +139,7 @@ public class GroupMessengerActivity extends Activity {
                 } catch (IOException e) {
                     e.printStackTrace();
                     break;
-                } /*catch (ClassNotFoundException e){
-                    e.printStackTrace();
-                    break;
-                }*/
+                }
             }
 
 
@@ -184,8 +171,6 @@ public class GroupMessengerActivity extends Activity {
     }
 
     private class ClientTask extends AsyncTask<Object, Void, Void> {
-
-        /*TODO: Implement Client Task to send messages*/
         @Override
         protected Void doInBackground(Object... msg) {
             Message msgToSend = (Message) msg[0];
@@ -194,9 +179,6 @@ public class GroupMessengerActivity extends Activity {
                 for (int port : remotePorts) {
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             port);
-//                    ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream());
-//                    objectOutputStream.writeObject(msgToSend);
-//                    objectOutputStream.flush();
                     DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
                     dataOutputStream.writeUTF(msgToSend.getJson());
                     dataOutputStream.flush();
