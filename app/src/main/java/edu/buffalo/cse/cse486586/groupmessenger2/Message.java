@@ -5,12 +5,12 @@ package edu.buffalo.cse.cse486586.groupmessenger2;
  */
 
 public class Message {
-    public String message;
-    public long senderID;
-    public long messageID;
-    public float priority;
-    public boolean proposed;
-    public boolean accepted;
+    private String message;
+    private long senderID;
+    private long messageID;
+    private float priority;
+    private boolean proposed;
+    private boolean accepted;
 
     public Message(String message, long senderID, long messageID, float priority, boolean proposed, boolean accepted) {
         this.message = message;
@@ -52,4 +52,22 @@ public class Message {
         }
         return -1; //Invalid message type encountered as both can't be true
     }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public long getSenderID() {
+        return senderID;
+    }
+
+    public long getMessageID() {
+        return messageID;
+    }
+
+    public float getPriority() {
+        return priority;
+    }
+
+
 }
