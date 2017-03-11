@@ -26,7 +26,11 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.PriorityQueue;
+import java.util.concurrent.PriorityBlockingQueue;
 
 /**
  * GroupMessengerActivity is the main Activity for the assignment.
@@ -37,8 +41,11 @@ public class GroupMessengerActivity extends Activity {
     private static final String TAG = GroupMessengerActivity.class.getSimpleName();
     private static final int SERVER_PORT = 10000;
     private static ArrayList<Integer> remotePorts;
-    private static HashMap<Integer,Integer> portOrdering;
+    private static HashMap<Integer, Integer> portOrdering;
     private static DatabaseHelper databaseHelper;
+    private static HashMap<String, ArrayList<Float>> proposedList;
+    private final int SEND_ALL = 1;
+    private final int SEND_PROPOSED = 2;
     private ServerTask serverTask;
     private ServerSocket serverSocket;
     private int deliveredMsgCounter;
@@ -46,10 +53,10 @@ public class GroupMessengerActivity extends Activity {
     private int own_port;
     private Uri uri;
     private int sentMsgCounter;
-    private final int SEND_ALL = 1;
-    private final int SEND_PROPOSED = 2;
     private TextView tv;
     private int maxSeenPriority = 0;
+    private static PriorityBlockingQueue<Message> priorityQueue;
+    private static HashMap<String,Message> backupQueueList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,6 +76,8 @@ public class GroupMessengerActivity extends Activity {
         //Initializing Own Port and calculating ports for other devices
         remotePorts = new ArrayList<Integer>();
         portOrdering = new HashMap<Integer, Integer>();
+        proposedList = new HashMap<String, ArrayList<Float>>();
+        backupQueueList = new HashMap<String, Message>();
 
         TelephonyManager tel = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
         String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
@@ -78,11 +87,25 @@ public class GroupMessengerActivity extends Activity {
         int j = 1;
         while (i < 5564) {
             remotePorts.add(i * 2);
-            portOrdering.put(i*2,j);
+            portOrdering.put(i * 2, j);
             i += 2;
             j++;
         }
 
+        //Creating a custom comparator for the message class and initializing the queue
+
+        final Comparator<Message> messageComparator = new Comparator<Message>() {
+            @Override
+            public int compare(Message msg1, Message msg2) {
+                if(msg1.getPriority() < msg2.getPriority())
+                    return -1;
+                if(msg1.getPriority() == msg2.getPriority())
+                    return 0;
+                return 1;
+            }
+        };
+
+        priorityQueue = new PriorityBlockingQueue<Message>(11,messageComparator);
         //Setting the serverSocket
         try {
             serverSocket = new ServerSocket(SERVER_PORT);
@@ -142,18 +165,51 @@ public class GroupMessengerActivity extends Activity {
                     socket.close();
                     Log.d("MSG RECEIVED", msg.getMessage());
                     int msgType = msg.getMessageType();
-                    if(msgType == 0){
+                    if (msgType == 0) {
                         //Original Message is Sent and priority must be proposed
-                        float priority = (float)((++maxSeenPriority) + (portOrdering.get(own_port)*0.1));
-                        msg.setProposed(priority,own_port);
+                        float priority = (float) ((++maxSeenPriority) + (portOrdering.get(own_port) * 0.1));
+                        msg.setProposed(priority, own_port);
+                        priorityQueue.add(msg);
+                        backupQueueList.put(msg.getMessageID(),msg);
                         publishProgress(msg);
-                    }else if(msgType == 1){
+                    } else if (msgType == 1) {
                         //Proposed Priority received, must be added to HashMap for this message and handled appropriately
-                        Log.d("PROPOSED",msg.getJson());
-                    }else if(msgType == 2){
+                        Log.d("PROPOSED", msg.getJson());
+                        if (proposedList.containsKey(msg.getMessageID())) {
+                            //Fetch current Array List and add current priority to it
+                            ArrayList<Float> list = proposedList.get(msg.getMessageID());
+                            list.add(msg.getPriority());
+                            proposedList.remove(msg.getMessageID());
+                            proposedList.put(msg.getMessageID(), list);
+                        } else {
+                            //New ArrayList and add to HashMap
+                            ArrayList<Float> newList = new ArrayList<Float>();
+                            newList.add(msg.getPriority());
+                            proposedList.put(msg.getMessageID(), newList);
+                        }
+                        ArrayList<Float> arrayList = proposedList.get(msg.getMessageID());
+                        if (arrayList.size() == 5) {
+                            //Received from all
+                            Log.d("Proposed", "Got all");
+                            float finalPriority = Collections.max(arrayList);
+                            proposedList.remove(msg.getMessageID());
+                            msg.setAccepted(finalPriority);
+                            publishProgress(msg);
+                        } else {
+                            Log.d("Proposed", "Got only " + Integer.toString(arrayList.size()));
+                        }
+                    } else if (msgType == 3) {
                         //Accepted Priority received, must be added to queue and published to text view
-
-                    }else{
+                        Message originalMsg = backupQueueList.get(msg.getMessageID());
+                        priorityQueue.remove(originalMsg);
+                        backupQueueList.remove(msg.getMessageID());
+                        priorityQueue.add(msg);
+                        if(msg.getPriority()>maxSeenPriority){
+                            maxSeenPriority = (int)Math.ceil(msg.getPriority()) + 1;
+                        }
+                        publishProgress(msg);
+                    } else {
+                        Log.d("ELSE","INVALID");
                         //Invalid message type encountered
                     }
                 } catch (IOException e) {
@@ -168,17 +224,27 @@ public class GroupMessengerActivity extends Activity {
 
         protected void onProgressUpdate(Message... messages) {
             Message msg = messages[0];
-            if(msg.getMessageType() == 1){
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR,msg,SEND_PROPOSED);
-            }
-
-            if(msg.getMessageType() == 2){
-                ContentValues values = new ContentValues();
-                values.put("key", Integer.toString(deliveredMsgCounter));
-                values.put("value", msg.getMessage());
-                deliveredMsgCounter++;
-                contentResolver.insert(uri, values);
-                tv.append(msg.getMessage() + Float.toString(msg.getPriority()) + "\n");
+            if (msg.getMessageType() == 1) {
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_PROPOSED);
+            } else if (msg.getMessageType() == 2) {
+                msg.clearProposer();
+                //Log.d("Hello","hey there");
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_ALL);
+            } else if (msg.getMessageType() == 3) {
+                Message x;
+                while((x = priorityQueue.peek())!=null){
+                    if(x.getMessageType() == 3){
+                        x = priorityQueue.poll();
+                        ContentValues values = new ContentValues();
+                        values.put("key", Integer.toString(deliveredMsgCounter));
+                        values.put("value", x.getMessage());
+                        deliveredMsgCounter++;
+                        contentResolver.insert(uri, values);
+                        tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
+                    }else{
+                        break;
+                    }
+                }
             }
             return;
         }
@@ -201,11 +267,13 @@ public class GroupMessengerActivity extends Activity {
         @Override
         protected Void doInBackground(Object... msg) {
             Message msgToSend = (Message) msg[0];
-            ArrayList<Integer> sendingPorts = remotePorts;
+            ArrayList<Integer> sendingPorts = new ArrayList<Integer>(remotePorts);
             int whoToSend = (Integer) msg[1];
-            if(whoToSend == SEND_PROPOSED){
+            if (whoToSend == SEND_PROPOSED) {
                 sendingPorts.clear();
-                sendingPorts.add((int)msgToSend.getSenderID());
+                sendingPorts.add((int) msgToSend.getSenderID());
+            }else{
+                sendingPorts = remotePorts;
             }
             try {
                 for (int port : sendingPorts) {
@@ -215,7 +283,9 @@ public class GroupMessengerActivity extends Activity {
                     dataOutputStream.writeUTF(msgToSend.getJson());
                     dataOutputStream.flush();
                     Log.d("MSG SENT", msgToSend.getJson());
-                    //Log.d("Message Type", Integer.toString(whoToSend));
+                    Log.d("Message Type", Integer.toString(whoToSend));
+                    Log.d("Length of Remote Ports", Integer.toString(sendingPorts.size()));
+                    Log.d("REMOTE PORT", Integer.toString(port));
                     DataInputStream dataInputStream = new DataInputStream((socket.getInputStream()));
                     String resp = dataInputStream.readUTF();
                     if (resp.equals("OK"))

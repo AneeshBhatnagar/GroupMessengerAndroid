@@ -27,6 +27,16 @@ public class Message {
         this.proposerID = -1;
     }
 
+    public Message(Message msg){
+        this.message = msg.message;
+        this.senderID = msg.senderID;
+        this.messageID = msg.messageID;
+        this.priority = msg.priority;
+        this.proposed = msg.proposed;
+        this.accepted = msg.accepted;
+        this.proposerID = msg.proposerID;
+    }
+
     public Message(String message, long senderID, String messageID) {
         this.message = message;
         this.senderID = senderID;
@@ -60,10 +70,20 @@ public class Message {
         this.accepted = false;
     }
 
+    public void setToOriginal(){
+        this.priority = -1;
+        this.proposed = false;
+        this.accepted = false;
+        this.proposerID = -1;
+    }
+
     public void setAccepted(float priority) {
         this.priority = priority;
-        this.proposerID = -1;
         this.accepted = true;
+    }
+
+    public void clearProposer(){
+        this.proposerID = -1;
         this.proposed = false;
     }
 
@@ -72,8 +92,10 @@ public class Message {
             return 0; //Initial message sent over network
         } else if (this.accepted == false && this.proposed == true) {
             return 1; //Priority proposed and message sent over network
+        } else if (this.accepted == true && this.proposed == true){
+            return 2; //Priority is finalised and message must be sent again over the network after clearing proposed
         } else if (this.accepted == true && this.proposed == false) {
-            return 2; //Accepted priority and message sent finally by sender along with priority
+            return 3; //Accepted priority and message sent finally by sender along with priority
         }
         return -1; //Invalid message type encountered as both can't be true
     }
