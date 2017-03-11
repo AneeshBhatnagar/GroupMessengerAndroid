@@ -26,6 +26,7 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 /**
  * GroupMessengerActivity is the main Activity for the assignment.
@@ -36,6 +37,7 @@ public class GroupMessengerActivity extends Activity {
     private static final String TAG = GroupMessengerActivity.class.getSimpleName();
     private static final int SERVER_PORT = 10000;
     private static ArrayList<Integer> remotePorts;
+    private static HashMap<Integer,Integer> portOrdering;
     private static DatabaseHelper databaseHelper;
     private ServerTask serverTask;
     private ServerSocket serverSocket;
@@ -44,10 +46,10 @@ public class GroupMessengerActivity extends Activity {
     private int own_port;
     private Uri uri;
     private int sentMsgCounter;
-    private final int SEND_MESSAGE = 1;
+    private final int SEND_ALL = 1;
     private final int SEND_PROPOSED = 2;
-    private final int SEND_ACCEPTED = 3;
     private TextView tv;
+    private int maxSeenPriority = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,15 +68,19 @@ public class GroupMessengerActivity extends Activity {
 
         //Initializing Own Port and calculating ports for other devices
         remotePorts = new ArrayList<Integer>();
+        portOrdering = new HashMap<Integer, Integer>();
 
         TelephonyManager tel = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
         String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
         own_port = (Integer.parseInt(portStr) * 2);
 
         int i = 5554;
+        int j = 1;
         while (i < 5564) {
             remotePorts.add(i * 2);
+            portOrdering.put(i*2,j);
             i += 2;
+            j++;
         }
 
         //Setting the serverSocket
@@ -103,7 +109,7 @@ public class GroupMessengerActivity extends Activity {
                 String msgText = editText.getText().toString();
                 String msgId = Integer.toString(own_port) + "-" + Integer.toString(++sentMsgCounter);
                 Message msg = new Message(msgText, own_port, msgId);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_MESSAGE);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_ALL);
                 editText.setText("");
             }
         });
@@ -116,7 +122,7 @@ public class GroupMessengerActivity extends Activity {
         return true;
     }
 
-    private class ServerTask extends AsyncTask<ServerSocket, String, Void> {
+    private class ServerTask extends AsyncTask<ServerSocket, Message, Void> {
 
         ServerSocket serverSocket;
         SQLiteDatabase sqLiteDatabase;
@@ -133,9 +139,23 @@ public class GroupMessengerActivity extends Activity {
                     String jsonString = dataInputStream.readUTF();
                     Message msg = new Message(jsonString);
                     dataOutputStream.writeUTF("OK");
-                    Log.d("MSG RECEIVED", msg.getMessage());
-                    publishProgress(msg.getMessage());
                     socket.close();
+                    Log.d("MSG RECEIVED", msg.getMessage());
+                    int msgType = msg.getMessageType();
+                    if(msgType == 0){
+                        //Original Message is Sent and priority must be proposed
+                        float priority = (float)((++maxSeenPriority) + (portOrdering.get(own_port)*0.1));
+                        msg.setProposed(priority,own_port);
+                        publishProgress(msg);
+                    }else if(msgType == 1){
+                        //Proposed Priority received, must be added to HashMap for this message and handled appropriately
+                        Log.d("PROPOSED",msg.getJson());
+                    }else if(msgType == 2){
+                        //Accepted Priority received, must be added to queue and published to text view
+
+                    }else{
+                        //Invalid message type encountered
+                    }
                 } catch (IOException e) {
                     e.printStackTrace();
                     break;
@@ -146,13 +166,20 @@ public class GroupMessengerActivity extends Activity {
             return null;
         }
 
-        protected void onProgressUpdate(String... strings) {
-            ContentValues values = new ContentValues();
-            values.put("key", Integer.toString(deliveredMsgCounter));
-            values.put("value", strings[0]);
-            deliveredMsgCounter++;
-            contentResolver.insert(uri, values);
-            tv.append(strings[0] + "\n");
+        protected void onProgressUpdate(Message... messages) {
+            Message msg = messages[0];
+            if(msg.getMessageType() == 1){
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR,msg,SEND_PROPOSED);
+            }
+
+            if(msg.getMessageType() == 2){
+                ContentValues values = new ContentValues();
+                values.put("key", Integer.toString(deliveredMsgCounter));
+                values.put("value", msg.getMessage());
+                deliveredMsgCounter++;
+                contentResolver.insert(uri, values);
+                tv.append(msg.getMessage() + Float.toString(msg.getPriority()) + "\n");
+            }
             return;
         }
 
@@ -174,16 +201,21 @@ public class GroupMessengerActivity extends Activity {
         @Override
         protected Void doInBackground(Object... msg) {
             Message msgToSend = (Message) msg[0];
+            ArrayList<Integer> sendingPorts = remotePorts;
             int whoToSend = (Integer) msg[1];
+            if(whoToSend == SEND_PROPOSED){
+                sendingPorts.clear();
+                sendingPorts.add((int)msgToSend.getSenderID());
+            }
             try {
-                for (int port : remotePorts) {
+                for (int port : sendingPorts) {
                     Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                             port);
                     DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
                     dataOutputStream.writeUTF(msgToSend.getJson());
                     dataOutputStream.flush();
                     Log.d("MSG SENT", msgToSend.getJson());
-                    Log.d("Message Type", Integer.toString(whoToSend));
+                    //Log.d("Message Type", Integer.toString(whoToSend));
                     DataInputStream dataInputStream = new DataInputStream((socket.getInputStream()));
                     String resp = dataInputStream.readUTF();
                     if (resp.equals("OK"))
