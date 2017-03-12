@@ -24,12 +24,14 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.PriorityQueue;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.PriorityBlockingQueue;
 
 /**
@@ -44,6 +46,10 @@ public class GroupMessengerActivity extends Activity {
     private static HashMap<Integer, Integer> portOrdering;
     private static DatabaseHelper databaseHelper;
     private static HashMap<String, ArrayList<Float>> proposedList;
+    private static PriorityBlockingQueue<Message> priorityQueue;
+    private static HashMap<String, Message> backupQueueList;
+    private static boolean crashed;
+    private static int crash_id;
     private final int SEND_ALL = 1;
     private final int SEND_PROPOSED = 2;
     private ServerTask serverTask;
@@ -55,8 +61,6 @@ public class GroupMessengerActivity extends Activity {
     private int sentMsgCounter;
     private TextView tv;
     private int maxSeenPriority = 0;
-    private static PriorityBlockingQueue<Message> priorityQueue;
-    private static HashMap<String,Message> backupQueueList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,11 +71,14 @@ public class GroupMessengerActivity extends Activity {
         databaseHelper = new DatabaseHelper(getApplicationContext());
         deliveredMsgCounter = 0;
         sentMsgCounter = 0;
+        crash_id = -1;
+        crashed = false;
         contentResolver = getContentResolver();
         Uri.Builder uriBuilder = new Uri.Builder();
         uriBuilder.authority("edu.buffalo.cse.cse486586.groupmessenger2.provider");
         uriBuilder.scheme("content");
         uri = uriBuilder.build();
+
 
         //Initializing Own Port and calculating ports for other devices
         remotePorts = new ArrayList<Integer>();
@@ -97,15 +104,15 @@ public class GroupMessengerActivity extends Activity {
         final Comparator<Message> messageComparator = new Comparator<Message>() {
             @Override
             public int compare(Message msg1, Message msg2) {
-                if(msg1.getPriority() < msg2.getPriority())
+                if (msg1.getPriority() < msg2.getPriority())
                     return -1;
-                if(msg1.getPriority() == msg2.getPriority())
+                if (msg1.getPriority() == msg2.getPriority())
                     return 0;
                 return 1;
             }
         };
 
-        priorityQueue = new PriorityBlockingQueue<Message>(11,messageComparator);
+        priorityQueue = new PriorityBlockingQueue<Message>(11, messageComparator);
         //Setting the serverSocket
         try {
             serverSocket = new ServerSocket(SERVER_PORT);
@@ -149,11 +156,14 @@ public class GroupMessengerActivity extends Activity {
 
         ServerSocket serverSocket;
         SQLiteDatabase sqLiteDatabase;
+        Timer timer;
+        TimerTask timerTask;
 
         @Override
         protected Void doInBackground(ServerSocket... sockets) {
             serverSocket = sockets[0];
             sqLiteDatabase = databaseHelper.getWritableDatabase();
+            timer = new Timer();
             while (true) {
                 try {
                     Socket socket = serverSocket.accept();
@@ -170,7 +180,7 @@ public class GroupMessengerActivity extends Activity {
                         float priority = (float) ((++maxSeenPriority) + (portOrdering.get(own_port) * 0.1));
                         msg.setProposed(priority, own_port);
                         priorityQueue.add(msg);
-                        backupQueueList.put(msg.getMessageID(),msg);
+                        backupQueueList.put(msg.getMessageID(), msg);
                         publishProgress(msg);
                     } else if (msgType == 1) {
                         //Proposed Priority received, must be added to HashMap for this message and handled appropriately
@@ -204,12 +214,12 @@ public class GroupMessengerActivity extends Activity {
                         priorityQueue.remove(originalMsg);
                         backupQueueList.remove(msg.getMessageID());
                         priorityQueue.add(msg);
-                        if(msg.getPriority()>maxSeenPriority){
-                            maxSeenPriority = (int)Math.ceil(msg.getPriority()) + 1;
+                        if (msg.getPriority() > maxSeenPriority) {
+                            maxSeenPriority = (int) Math.ceil(msg.getPriority()) + 1;
                         }
                         publishProgress(msg);
                     } else {
-                        Log.d("ELSE","INVALID");
+                        Log.d("ELSE", "INVALID");
                         //Invalid message type encountered
                     }
                 } catch (IOException e) {
@@ -223,6 +233,16 @@ public class GroupMessengerActivity extends Activity {
         }
 
         protected void onProgressUpdate(Message... messages) {
+            timer.cancel();
+            timer.purge();
+            timer = new Timer();
+            timerTask = new TimerTask() {
+                @Override
+                public void run() {
+                    lateProcess();
+                }
+            };
+            timer.schedule(timerTask, 2000);
             Message msg = messages[0];
             if (msg.getMessageType() == 1) {
                 new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_PROPOSED);
@@ -232,8 +252,8 @@ public class GroupMessengerActivity extends Activity {
                 new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_ALL);
             } else if (msg.getMessageType() == 3) {
                 Message x;
-                while((x = priorityQueue.peek())!=null){
-                    if(x.getMessageType() == 3){
+                while ((x = priorityQueue.peek()) != null) {
+                    if (x.getMessageType() == 3) {
                         x = priorityQueue.poll();
                         ContentValues values = new ContentValues();
                         values.put("key", Integer.toString(deliveredMsgCounter));
@@ -241,7 +261,7 @@ public class GroupMessengerActivity extends Activity {
                         deliveredMsgCounter++;
                         contentResolver.insert(uri, values);
                         tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
-                    }else{
+                    } else {
                         break;
                     }
                 }
@@ -261,6 +281,17 @@ public class GroupMessengerActivity extends Activity {
             sqLiteDatabase.close();
             super.onCancelled();
         }
+
+        protected void lateProcess() {
+            Log.d(TAG, "No Message Encountered in last 2 seconds");
+            /*TODO: Implement the following in this method
+            * 1. Accept some priority for all currently available priorities in the list
+            * 2. Multi cast this to everyone
+            * 3. Set performed action to processed
+            * 4. Next time when called**IMPORTANT**, check if all messages are processed then deliver
+            * all msgs, checking if the proposed state is only for the crashed avd msgs.
+            * */
+        }
     }
 
     private class ClientTask extends AsyncTask<Object, Void, Void> {
@@ -272,30 +303,39 @@ public class GroupMessengerActivity extends Activity {
             if (whoToSend == SEND_PROPOSED) {
                 sendingPorts.clear();
                 sendingPorts.add((int) msgToSend.getSenderID());
-            }else{
+            } else {
                 sendingPorts = remotePorts;
             }
-            try {
-                for (int port : sendingPorts) {
-                    Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
-                            port);
-                    DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
-                    dataOutputStream.writeUTF(msgToSend.getJson());
-                    dataOutputStream.flush();
-                    Log.d("MSG SENT", msgToSend.getJson());
-                    Log.d("Message Type", Integer.toString(whoToSend));
-                    Log.d("Length of Remote Ports", Integer.toString(sendingPorts.size()));
-                    Log.d("REMOTE PORT", Integer.toString(port));
-                    DataInputStream dataInputStream = new DataInputStream((socket.getInputStream()));
-                    String resp = dataInputStream.readUTF();
-                    if (resp.equals("OK"))
-                        socket.close();
 
+            for (int port : sendingPorts) {
+                try {
+                    if (crash_id != port) {
+                        Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
+                                port);
+                        DataOutputStream dataOutputStream = new DataOutputStream(socket.getOutputStream());
+                        dataOutputStream.writeUTF(msgToSend.getJson());
+                        dataOutputStream.flush();
+                        Log.d("MSG SENT", msgToSend.getJson());
+                        Log.d("Message Type", Integer.toString(whoToSend));
+                        Log.d("Length of Remote Ports", Integer.toString(sendingPorts.size()));
+                        Log.d("REMOTE PORT", Integer.toString(port));
+                        DataInputStream dataInputStream = new DataInputStream((socket.getInputStream()));
+                        socket.setSoTimeout(5000);
+                        String resp = dataInputStream.readUTF();
+                        if (resp.equals("OK"))
+                            socket.close();
+                    }
+                } catch (SocketTimeoutException e) {
+                    Log.d("SocketTimeOut", "Exception for" + Integer.toString(port));
+                } catch (UnknownHostException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    Log.d("IOEXCEPTION", "TIMEOUT on " + Integer.toString(port));
+                    //e.printStackTrace();
+                    crashed = true;
+                    crash_id = port;
                 }
-            } catch (UnknownHostException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
+
             }
 
             return null;
