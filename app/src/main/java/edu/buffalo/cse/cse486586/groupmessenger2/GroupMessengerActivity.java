@@ -30,8 +30,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 
 /**
@@ -46,6 +48,7 @@ public class GroupMessengerActivity extends Activity {
     private static HashMap<Integer, Integer> portOrdering;
     private static DatabaseHelper databaseHelper;
     private static HashMap<String, ArrayList<Float>> proposedList;
+    private static ConcurrentHashMap<String, Message> sentMsgList;
     private static PriorityBlockingQueue<Message> priorityQueue;
     private static HashMap<String, Message> backupQueueList;
     private static boolean crashed;
@@ -61,6 +64,7 @@ public class GroupMessengerActivity extends Activity {
     private int sentMsgCounter;
     private TextView tv;
     private int maxSeenPriority = 0;
+    private int whichTimeout = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +88,7 @@ public class GroupMessengerActivity extends Activity {
         remotePorts = new ArrayList<Integer>();
         portOrdering = new HashMap<Integer, Integer>();
         proposedList = new HashMap<String, ArrayList<Float>>();
+        sentMsgList = new ConcurrentHashMap<String, Message>();
         backupQueueList = new HashMap<String, Message>();
 
         TelephonyManager tel = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
@@ -152,7 +157,7 @@ public class GroupMessengerActivity extends Activity {
         return true;
     }
 
-    private class ServerTask extends AsyncTask<ServerSocket, Message, Void> {
+    private class ServerTask extends AsyncTask<ServerSocket, Message[], Void> {
 
         ServerSocket serverSocket;
         SQLiteDatabase sqLiteDatabase;
@@ -173,7 +178,7 @@ public class GroupMessengerActivity extends Activity {
                     Message msg = new Message(jsonString);
                     dataOutputStream.writeUTF("OK");
                     socket.close();
-                    Log.d("MSG RECEIVED", msg.getMessage());
+                    Log.d("MSG RECEIVED", msg.getMessageID());
                     int msgType = msg.getMessageType();
                     if (msgType == 0) {
                         //Original Message is Sent and priority must be proposed
@@ -181,7 +186,7 @@ public class GroupMessengerActivity extends Activity {
                         msg.setProposed(priority, own_port);
                         priorityQueue.add(msg);
                         backupQueueList.put(msg.getMessageID(), msg);
-                        publishProgress(msg);
+                        publishProgress(new Message[]{msg});
                     } else if (msgType == 1) {
                         //Proposed Priority received, must be added to HashMap for this message and handled appropriately
                         Log.d("PROPOSED", msg.getJson());
@@ -204,7 +209,7 @@ public class GroupMessengerActivity extends Activity {
                             float finalPriority = Collections.max(arrayList);
                             proposedList.remove(msg.getMessageID());
                             msg.setAccepted(finalPriority);
-                            publishProgress(msg);
+                            publishProgress(new Message[]{msg});
                         } else {
                             Log.d("Proposed", "Got only " + Integer.toString(arrayList.size()));
                         }
@@ -217,7 +222,7 @@ public class GroupMessengerActivity extends Activity {
                         if (msg.getPriority() > maxSeenPriority) {
                             maxSeenPriority = (int) Math.ceil(msg.getPriority()) + 1;
                         }
-                        publishProgress(msg);
+                        publishProgress(new Message[]{msg});
                     } else {
                         Log.d("ELSE", "INVALID");
                         //Invalid message type encountered
@@ -232,7 +237,7 @@ public class GroupMessengerActivity extends Activity {
             return null;
         }
 
-        protected void onProgressUpdate(Message... messages) {
+        protected void onProgressUpdate(Message[]... messages) {
             timer.cancel();
             timer.purge();
             timer = new Timer();
@@ -242,29 +247,39 @@ public class GroupMessengerActivity extends Activity {
                     lateProcess();
                 }
             };
-            timer.schedule(timerTask, 2000);
-            Message msg = messages[0];
-            if (msg.getMessageType() == 1) {
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_PROPOSED);
-            } else if (msg.getMessageType() == 2) {
-                msg.clearProposer();
-                //Log.d("Hello","hey there");
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_ALL);
-            } else if (msg.getMessageType() == 3) {
-                Message x;
-                while ((x = priorityQueue.peek()) != null) {
-                    if (x.getMessageType() == 3) {
-                        x = priorityQueue.poll();
-                        ContentValues values = new ContentValues();
-                        values.put("key", Integer.toString(deliveredMsgCounter));
-                        values.put("value", x.getMessage());
-                        deliveredMsgCounter++;
-                        contentResolver.insert(uri, values);
-                        tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
-                    } else {
-                        break;
+            timer.schedule(timerTask, 3000);
+            Message[] msgArray = messages[0];
+            if (msgArray.length == 1) {
+                Message msg = msgArray[0];
+                if (msg.getMessageType() == 1) {
+                    new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_PROPOSED);
+                } else if (msg.getMessageType() == 2) {
+                    msg.clearProposer();
+                    sentMsgList.remove(msg.getMessageID());
+                    //Log.d("Hello","hey there");
+                    new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_ALL);
+                } else if (msg.getMessageType() == 3) {
+                    Message x;
+                    while ((x = priorityQueue.peek()) != null) {
+                        if (x.getMessageType() == 3) {
+                            x = priorityQueue.poll();
+                            ContentValues values = new ContentValues();
+                            values.put("key", Integer.toString(deliveredMsgCounter));
+                            values.put("value", x.getMessage());
+                            deliveredMsgCounter++;
+                            contentResolver.insert(uri, values);
+                            tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
+                        } else {
+                            break;
+                        }
                     }
                 }
+            } else {
+                for(int i=0; i<msgArray.length;i++){
+                    msgArray[i].clearProposer();
+                    new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msgArray[i], SEND_ALL);
+                }
+
             }
             return;
         }
@@ -283,7 +298,7 @@ public class GroupMessengerActivity extends Activity {
         }
 
         protected void lateProcess() {
-            Log.d(TAG, "No Message Encountered in last 2 seconds");
+            Log.d(TAG, "No Message Encountered in last 2 seconds and which="+Integer.toString(whichTimeout));
             /*TODO: Implement the following in this method
             * 1. Accept some priority for all currently available priorities in the list
             * 2. Multi cast this to everyone
@@ -291,6 +306,55 @@ public class GroupMessengerActivity extends Activity {
             * 4. Next time when called**IMPORTANT**, check if all messages are processed then deliver
             * all msgs, checking if the proposed state is only for the crashed avd msgs.
             * */
+
+            if (whichTimeout == 0) {
+                //Select Priorities from existing and send
+                whichTimeout = 1;
+                if(sentMsgList.keySet().size() >0){
+                    Log.d("Timeout Handling", "Accepting from available priorities");
+                    ArrayList<Message> toSend = new ArrayList<Message>();
+                    Set<String> sentMsgKeys = sentMsgList.keySet();
+                    for (String id : sentMsgKeys) {
+                        if (proposedList.containsKey(id)) {
+                            ArrayList<Float> arrayList = proposedList.get(id);
+                            float finalPriority = Collections.max(arrayList);
+                            proposedList.remove(id);
+                            Message message = sentMsgList.get(id);
+                            message.setAccepted(finalPriority);
+                            sentMsgList.remove(id);
+                            toSend.add(message);
+                        }
+                    }
+                    Message finalArr[] = new Message[toSend.size()];
+                    for(int i=0; i<toSend.size(); i++){
+                        finalArr[i] = toSend.get(i);
+                    }
+                    publishProgress(finalArr);
+                }
+
+            } else if (whichTimeout == 1) {
+                //Deliver all msgs from priority queue in order
+                whichTimeout = -1;
+                if(priorityQueue.size() >0){
+                    Message x;
+                    while((x=priorityQueue.peek())!=null){
+                        if(x.getMessageType() == 3 || (x.getMessageType() == 2 && crash_id == x.getSenderID())){
+                            x = priorityQueue.poll();
+                            ContentValues values = new ContentValues();
+                            values.put("key", Integer.toString(deliveredMsgCounter));
+                            values.put("value", x.getMessage());
+                            deliveredMsgCounter++;
+                            contentResolver.insert(uri, values);
+                            tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
+                        }else{
+                            break;
+                        }
+
+                    }
+                }
+            }else{
+                Log.d("Timeout","-1");
+            }
         }
     }
 
@@ -306,6 +370,8 @@ public class GroupMessengerActivity extends Activity {
             } else {
                 sendingPorts = remotePorts;
             }
+
+            sentMsgList.put(msgToSend.getMessageID(), msgToSend);
 
             for (int port : sendingPorts) {
                 try {
