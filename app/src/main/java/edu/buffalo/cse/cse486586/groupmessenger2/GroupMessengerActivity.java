@@ -50,6 +50,7 @@ public class GroupMessengerActivity extends Activity {
     private static ConcurrentHashMap<String, Message> sentMsgList;
     private static PriorityBlockingQueue<Message> priorityQueue;
     private static HashMap<String, Message> backupQueueList;
+    private static HashMap<String, Boolean> deliveredListOfMessages;
     private static boolean crashed;
     private static int crash_id;
     private final int SEND_ALL = 1;
@@ -89,6 +90,7 @@ public class GroupMessengerActivity extends Activity {
         proposedList = new HashMap<String, ArrayList<Float>>();
         sentMsgList = new ConcurrentHashMap<String, Message>();
         backupQueueList = new HashMap<String, Message>();
+        deliveredListOfMessages = new HashMap<String, Boolean>();
 
         TelephonyManager tel = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
         String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
@@ -200,7 +202,7 @@ public class GroupMessengerActivity extends Activity {
                             proposedList.put(msg.getMessageID(), newList);
                         }
                         ArrayList<Float> arrayList = proposedList.get(msg.getMessageID());
-                        if (arrayList.size() == 5) {
+                        if (arrayList.size() == 5 || (crashed && arrayList.size() == 4)) {
                             //Received from all
                             Log.d("Proposed", "Got all");
                             float finalPriority = Collections.max(arrayList);
@@ -244,7 +246,8 @@ public class GroupMessengerActivity extends Activity {
                     lateProcess();
                 }
             };
-            timer.schedule(timerTask, 3000);
+            if (whichTimeout == 0)
+                timer.schedule(timerTask, 5000);
             Message[] msgArray = messages[0];
             if (msgArray.length == 1) {
                 Message msg = msgArray[0];
@@ -258,14 +261,18 @@ public class GroupMessengerActivity extends Activity {
                 } else if (msg.getMessageType() == 3) {
                     Message x;
                     while ((x = priorityQueue.peek()) != null) {
-                        if (x.getMessageType() == 3) {
+                        if (x.getMessageType() == 3 || (whichTimeout == 1 && crashed && x.getSenderID() == crash_id)) {
                             x = priorityQueue.poll();
-                            ContentValues values = new ContentValues();
-                            values.put("key", Integer.toString(deliveredMsgCounter));
-                            values.put("value", x.getMessage());
-                            deliveredMsgCounter++;
-                            contentResolver.insert(uri, values);
-                            tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
+                            if(!deliveredListOfMessages.containsKey(x.getMessageID())){
+                                ContentValues values = new ContentValues();
+                                values.put("key", Integer.toString(deliveredMsgCounter));
+                                values.put("value", x.getMessage());
+                                deliveredMsgCounter++;
+                                contentResolver.insert(uri, values);
+                                tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
+                                deliveredListOfMessages.put(x.getMessageID(),true);
+                            }
+
                         } else {
                             break;
                         }
@@ -328,29 +335,39 @@ public class GroupMessengerActivity extends Activity {
                     publishProgress(finalArr);
                 }
 
-            } else if (whichTimeout == 1) {
+            } /*else if (whichTimeout == 1) {
                 //Deliver all msgs from priority queue in order
                 whichTimeout = -1;
                 if (priorityQueue.size() > 0) {
+                    //Find the current max priority
+                    Object[] objects = priorityQueue.toArray();
+                    float maxP = -1;
+                    for (int i = 0; i < objects.length; i++) {
+                        Message m = (Message) objects[i];
+                        if (maxP < m.getPriority()) {
+                            maxP = m.getPriority();
+                        }
+                    }
+                    maxP++;
                     Message x;
-                    while ((x = priorityQueue.peek()) != null) {
-                        //if(x.getMessageType() == 3 || (x.getMessageType() == 2 && crash_id == x.getSenderID())){
-                        x = priorityQueue.poll();
-                        ContentValues values = new ContentValues();
-                        values.put("key", Integer.toString(deliveredMsgCounter));
-                        values.put("value", x.getMessage());
-                        deliveredMsgCounter++;
-                        contentResolver.insert(uri, values);
+                    while ((x = priorityQueue.poll()) != null) {
+                        if (x.getMessageType() == 3) {
+                            ContentValues values = new ContentValues();
+                            values.put("key", Integer.toString(deliveredMsgCounter));
+                            values.put("value", x.getMessage());
+                            deliveredMsgCounter++;
+                            contentResolver.insert(uri, values);
 //                        tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
-                        /*}else{
-                            break;
-                        }*/
+                        } else {
+                            x.setPriority(++maxP);
+                            priorityQueue.add(x);
+                        }
 
                     }
                 }
             } else {
                 Log.d("Timeout", "-1");
-            }
+            }*/
         }
     }
 

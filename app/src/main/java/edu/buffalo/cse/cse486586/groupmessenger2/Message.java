@@ -133,4 +133,11 @@ public class Message {
         }
         return jsonObject.toString();
     }
+
+    public void setPriority(float priority){
+        this.priority = priority;
+        this.accepted = true;
+        this.proposed = false;
+        this.proposerID = -1;
+    }
 }
