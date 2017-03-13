@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
-import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -160,14 +159,12 @@ public class GroupMessengerActivity extends Activity {
     private class ServerTask extends AsyncTask<ServerSocket, Message[], Void> {
 
         ServerSocket serverSocket;
-        SQLiteDatabase sqLiteDatabase;
         Timer timer;
         TimerTask timerTask;
 
         @Override
         protected Void doInBackground(ServerSocket... sockets) {
             serverSocket = sockets[0];
-            sqLiteDatabase = databaseHelper.getWritableDatabase();
             timer = new Timer();
             while (true) {
                 try {
@@ -275,7 +272,7 @@ public class GroupMessengerActivity extends Activity {
                     }
                 }
             } else {
-                for(int i=0; i<msgArray.length;i++){
+                for (int i = 0; i < msgArray.length; i++) {
                     msgArray[i].clearProposer();
                     new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msgArray[i], SEND_ALL);
                 }
@@ -284,7 +281,7 @@ public class GroupMessengerActivity extends Activity {
             return;
         }
 
-        @Override
+        /*@Override
         protected void onCancelled() {
             if (!serverSocket.isClosed()) {
                 try {
@@ -293,12 +290,11 @@ public class GroupMessengerActivity extends Activity {
                     e.printStackTrace();
                 }
             }
-            sqLiteDatabase.close();
             super.onCancelled();
-        }
+        }*/
 
         protected void lateProcess() {
-            Log.d(TAG, "No Message Encountered in last 2 seconds and which="+Integer.toString(whichTimeout));
+            Log.d(TAG, "No Message Encountered in last 2 seconds and which=" + Integer.toString(whichTimeout));
             /*TODO: Implement the following in this method
             * 1. Accept some priority for all currently available priorities in the list
             * 2. Multi cast this to everyone
@@ -310,7 +306,7 @@ public class GroupMessengerActivity extends Activity {
             if (whichTimeout == 0) {
                 //Select Priorities from existing and send
                 whichTimeout = 1;
-                if(sentMsgList.keySet().size() >0){
+                if (sentMsgList.keySet().size() > 0) {
                     Log.d("Timeout Handling", "Accepting from available priorities");
                     ArrayList<Message> toSend = new ArrayList<Message>();
                     Set<String> sentMsgKeys = sentMsgList.keySet();
@@ -326,7 +322,7 @@ public class GroupMessengerActivity extends Activity {
                         }
                     }
                     Message finalArr[] = new Message[toSend.size()];
-                    for(int i=0; i<toSend.size(); i++){
+                    for (int i = 0; i < toSend.size(); i++) {
                         finalArr[i] = toSend.get(i);
                     }
                     publishProgress(finalArr);
@@ -335,25 +331,25 @@ public class GroupMessengerActivity extends Activity {
             } else if (whichTimeout == 1) {
                 //Deliver all msgs from priority queue in order
                 whichTimeout = -1;
-                if(priorityQueue.size() >0){
+                if (priorityQueue.size() > 0) {
                     Message x;
-                    while((x=priorityQueue.peek())!=null){
-                        if(x.getMessageType() == 3 || (x.getMessageType() == 2 && crash_id == x.getSenderID())){
-                            x = priorityQueue.poll();
-                            ContentValues values = new ContentValues();
-                            values.put("key", Integer.toString(deliveredMsgCounter));
-                            values.put("value", x.getMessage());
-                            deliveredMsgCounter++;
-                            contentResolver.insert(uri, values);
-                            tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
-                        }else{
+                    while ((x = priorityQueue.peek()) != null) {
+                        //if(x.getMessageType() == 3 || (x.getMessageType() == 2 && crash_id == x.getSenderID())){
+                        x = priorityQueue.poll();
+                        ContentValues values = new ContentValues();
+                        values.put("key", Integer.toString(deliveredMsgCounter));
+                        values.put("value", x.getMessage());
+                        deliveredMsgCounter++;
+                        contentResolver.insert(uri, values);
+//                        tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
+                        /*}else{
                             break;
-                        }
+                        }*/
 
                     }
                 }
-            }else{
-                Log.d("Timeout","-1");
+            } else {
+                Log.d("Timeout", "-1");
             }
         }
     }

@@ -58,6 +58,8 @@ public class GroupMessengerProvider extends ContentProvider {
         } catch (SQLException e) {
             Log.e(TAG, "SQL Insert Content Provider Error");
             e.printStackTrace();
+        } catch (IllegalStateException e){
+            e.printStackTrace();
         }
         Log.v("insert", values.toString());
         sqLiteDatabase.close();
