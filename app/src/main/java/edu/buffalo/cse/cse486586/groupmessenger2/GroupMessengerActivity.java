@@ -16,6 +16,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import org.w3c.dom.Text;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -200,7 +202,7 @@ public class GroupMessengerActivity extends Activity {
                             proposedList.remove(msg.getMessageID());
                             proposedList.put(msg.getMessageID(), list);
                             proposersList.remove(msg.getMessageID());
-                            proposersList.put(msg.getMessageID(),proList);
+                            proposersList.put(msg.getMessageID(), proList);
                         } else {
                             //New ArrayList and add to HashMap
                             ArrayList<Float> newList = new ArrayList<Float>();
@@ -208,7 +210,7 @@ public class GroupMessengerActivity extends Activity {
                             ArrayList<Long> proList = new ArrayList<Long>();
                             proList.add(msg.getProposerID());
                             proposedList.put(msg.getMessageID(), newList);
-                            proposersList.put(msg.getMessageID(),proList);
+                            proposersList.put(msg.getMessageID(), proList);
                         }
                         ArrayList<Float> arrayList = proposedList.get(msg.getMessageID());
                         ArrayList<Long> propList = proposersList.get(msg.getMessageID());
@@ -257,8 +259,7 @@ public class GroupMessengerActivity extends Activity {
                     lateProcess();
                 }
             };
-            if (whichTimeout == 0)
-                timer.schedule(timerTask, 5000);
+            timer.schedule(timerTask, 4000);
             Message[] msgArray = messages[0];
             if (msgArray.length == 1) {
                 Message msg = msgArray[0];
@@ -270,24 +271,7 @@ public class GroupMessengerActivity extends Activity {
                     //Log.d("Hello","hey there");
                     new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, SEND_ALL);
                 } else if (msg.getMessageType() == 3) {
-                    Message x;
-                    while ((x = priorityQueue.peek()) != null) {
-                        if (x.getMessageType() == 3 || (whichTimeout == 1 && crashed && x.getSenderID() == crash_id)) {
-                            x = priorityQueue.poll();
-                            if(!deliveredListOfMessages.containsKey(x.getMessageID())){
-                                ContentValues values = new ContentValues();
-                                values.put("key", Integer.toString(deliveredMsgCounter));
-                                values.put("value", x.getMessage());
-                                deliveredMsgCounter++;
-                                contentResolver.insert(uri, values);
-                                tv.append(x.getMessage() + Float.toString(x.getPriority()) + "\n");
-                                deliveredListOfMessages.put(x.getMessageID(),true);
-                            }
-
-                        } else {
-                            break;
-                        }
-                    }
+                    Log.d(TAG, "Message Counter");
                 }
             } else {
                 for (int i = 0; i < msgArray.length; i++) {
@@ -347,7 +331,36 @@ public class GroupMessengerActivity extends Activity {
                     publishProgress(finalArr);
                 }
 
-            } /*else if (whichTimeout == 1) {
+            } else if (whichTimeout == 1) {
+                //tv = (TextView) findViewById(R.id.textView1);
+                Message x;
+                while ((x = priorityQueue.peek()) != null) {
+                    if (x.getMessageType() == 3 || (crashed && x.getSenderID() == crash_id)) {
+                        x = priorityQueue.poll();
+                        if (!deliveredListOfMessages.containsKey(x.getMessageID())) {
+                            ContentValues values = new ContentValues();
+                            values.put("key", Integer.toString(deliveredMsgCounter));
+                            values.put("value", x.getMessage());
+                            deliveredMsgCounter++;
+                            contentResolver.insert(uri, values);
+                            final String op = x.getMessage();
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    tv.append(op + "\n");
+                                }
+                            });
+
+                            deliveredListOfMessages.put(x.getMessageID(), true);
+                        }
+
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            /*else if (whichTimeout == 1) {
                 //Deliver all msgs from priority queue in order
                 whichTimeout = -1;
                 if (priorityQueue.size() > 0) {
