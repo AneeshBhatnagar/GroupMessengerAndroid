@@ -134,6 +134,10 @@ public class Message {
         return jsonObject.toString();
     }
 
+    public long getProposerID() {
+        return proposerID;
+    }
+
     public void setPriority(float priority){
         this.priority = priority;
         this.accepted = true;

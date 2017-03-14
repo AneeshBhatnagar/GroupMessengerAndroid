@@ -47,6 +47,7 @@ public class GroupMessengerActivity extends Activity {
     private static HashMap<Integer, Integer> portOrdering;
     private static DatabaseHelper databaseHelper;
     private static HashMap<String, ArrayList<Float>> proposedList;
+    private static HashMap<String, ArrayList<Long>> proposersList;
     private static ConcurrentHashMap<String, Message> sentMsgList;
     private static PriorityBlockingQueue<Message> priorityQueue;
     private static HashMap<String, Message> backupQueueList;
@@ -88,6 +89,7 @@ public class GroupMessengerActivity extends Activity {
         remotePorts = new ArrayList<Integer>();
         portOrdering = new HashMap<Integer, Integer>();
         proposedList = new HashMap<String, ArrayList<Float>>();
+        proposersList = new HashMap<String, ArrayList<Long>>();
         sentMsgList = new ConcurrentHashMap<String, Message>();
         backupQueueList = new HashMap<String, Message>();
         deliveredListOfMessages = new HashMap<String, Boolean>();
@@ -192,21 +194,30 @@ public class GroupMessengerActivity extends Activity {
                         if (proposedList.containsKey(msg.getMessageID())) {
                             //Fetch current Array List and add current priority to it
                             ArrayList<Float> list = proposedList.get(msg.getMessageID());
+                            ArrayList<Long> proList = proposersList.get(msg.getMessageID());
                             list.add(msg.getPriority());
+                            proList.add(msg.getProposerID());
                             proposedList.remove(msg.getMessageID());
                             proposedList.put(msg.getMessageID(), list);
+                            proposersList.remove(msg.getMessageID());
+                            proposersList.put(msg.getMessageID(),proList);
                         } else {
                             //New ArrayList and add to HashMap
                             ArrayList<Float> newList = new ArrayList<Float>();
                             newList.add(msg.getPriority());
+                            ArrayList<Long> proList = new ArrayList<Long>();
+                            proList.add(msg.getProposerID());
                             proposedList.put(msg.getMessageID(), newList);
+                            proposersList.put(msg.getMessageID(),proList);
                         }
                         ArrayList<Float> arrayList = proposedList.get(msg.getMessageID());
-                        if (arrayList.size() == 5 || (crashed && arrayList.size() == 4)) {
+                        ArrayList<Long> propList = proposersList.get(msg.getMessageID());
+                        if (arrayList.size() == 5 || (crashed && arrayList.size() == 4 && !propList.contains(crash_id))) {
                             //Received from all
                             Log.d("Proposed", "Got all");
                             float finalPriority = Collections.max(arrayList);
                             proposedList.remove(msg.getMessageID());
+                            proposersList.remove(msg.getMessageID());
                             msg.setAccepted(finalPriority);
                             publishProgress(new Message[]{msg});
                         } else {
@@ -322,6 +333,7 @@ public class GroupMessengerActivity extends Activity {
                             ArrayList<Float> arrayList = proposedList.get(id);
                             float finalPriority = Collections.max(arrayList);
                             proposedList.remove(id);
+                            proposersList.remove(id);
                             Message message = sentMsgList.get(id);
                             message.setAccepted(finalPriority);
                             sentMsgList.remove(id);
