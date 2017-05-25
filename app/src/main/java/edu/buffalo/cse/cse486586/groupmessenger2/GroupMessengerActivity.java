@@ -16,8 +16,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
-import org.w3c.dom.Text;
-
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -47,7 +45,6 @@ public class GroupMessengerActivity extends Activity {
     private static final int SERVER_PORT = 10000;
     private static ArrayList<Integer> remotePorts;
     private static HashMap<Integer, Integer> portOrdering;
-    private static DatabaseHelper databaseHelper;
     private static HashMap<String, ArrayList<Float>> proposedList;
     private static HashMap<String, ArrayList<Long>> proposersList;
     private static ConcurrentHashMap<String, Message> sentMsgList;
@@ -75,7 +72,6 @@ public class GroupMessengerActivity extends Activity {
         setContentView(R.layout.activity_group_messenger);
         tv = (TextView) findViewById(R.id.textView1);
         tv.setMovementMethod(new ScrollingMovementMethod());
-        databaseHelper = new DatabaseHelper(getApplicationContext());
         deliveredMsgCounter = 0;
         sentMsgCounter = 0;
         crash_id = -1;
